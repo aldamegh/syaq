@@ -1,0 +1,317 @@
+"""Generate the canonical Python and JavaScript normalizers from one contract."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SPEC_PATH = ROOT / "normalization/syaq_arabic_v1.json"
+CORPUS_PATH = ROOT / "normalization/conformance-corpus-v1.json"
+PYTHON_OUTPUT = ROOT / "app/normalize.py"
+JAVASCRIPT_OUTPUT = ROOT / "app/static/normalizer.js"
+
+
+def _codepoint(value: str) -> int:
+    if not isinstance(value, str) or not value.startswith("U+"):
+        raise ValueError("code point must use U+XXXX form")
+    number = int(value[2:], 16)
+    if not 0 <= number <= 0x10FFFF:
+        raise ValueError("code point is out of range")
+    return number
+
+
+def _load_contract() -> tuple[dict, str]:
+    raw = SPEC_PATH.read_bytes()
+    spec = json.loads(raw.decode("utf-8"))
+    required = {
+        "schema_version",
+        "normalizer_id",
+        "normalizer_version",
+        "input",
+        "unicode_normalization",
+        "operation_order",
+        "remove_general_categories",
+        "remove_code_points",
+        "map_code_points",
+        "preserved_distinctions",
+        "repetition",
+        "whitespace_code_points",
+        "definite_article",
+    }
+    if not required <= spec.keys():
+        raise ValueError("normalizer contract is incomplete")
+    if spec["schema_version"] != 1 or spec["normalizer_version"] != 1:
+        raise ValueError("unsupported normalizer contract version")
+    if spec["normalizer_id"] != "syaq-arabic-v1":
+        raise ValueError("unexpected normalizer identifier")
+    if spec["input"] != {"type": "string", "invalid_input": "raise_type_error"}:
+        raise ValueError("invalid input contract")
+    if spec["unicode_normalization"].get("form") != "NONE":
+        raise ValueError("v1 must not introduce Unicode form rewriting")
+    if spec["remove_general_categories"] != ["Mn"]:
+        raise ValueError("v1 mark-removal contract changed")
+
+    removals = {_codepoint(value) for value in spec["remove_code_points"]}
+    whitespace = {_codepoint(value) for value in spec["whitespace_code_points"]}
+    mappings: dict[int, int] = {}
+    for mapping in spec["map_code_points"]:
+        target = _codepoint(mapping["to"])
+        for source in mapping["from"]:
+            source_value = _codepoint(source)
+            if source_value in mappings:
+                raise ValueError("duplicate mapping source")
+            mappings[source_value] = target
+
+    distinction = spec["preserved_distinctions"]
+    if distinction != [{"left": "U+0649", "right": "U+064A", "rule": "distinct"}]:
+        raise ValueError("U+0649/U+064A distinction is mandatory")
+    if 0x0649 in mappings or 0x064A in mappings or {0x0649, 0x064A} & removals:
+        raise ValueError("U+0649 and U+064A must be preserved")
+    if removals & whitespace:
+        # U+FEFF is removed explicitly and therefore intentionally omitted from
+        # the contract whitespace list.
+        raise ValueError("removal and whitespace sets must be disjoint")
+
+    corpus = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
+    if (
+        corpus.get("schema_version") != 1
+        or corpus.get("normalizer_id") != spec["normalizer_id"]
+        or corpus.get("normalizer_version") != spec["normalizer_version"]
+        or corpus.get("fixtures_are_synthetic") is not True
+        or not isinstance(corpus.get("cases"), list)
+        or not corpus["cases"]
+    ):
+        raise ValueError("conformance corpus metadata is invalid")
+    seen_ids: set[str] = set()
+    for case in corpus["cases"]:
+        if set(case) != {"id", "input", "expected"}:
+            raise ValueError("conformance case schema is invalid")
+        if not all(isinstance(case[field], str) for field in case):
+            raise ValueError("conformance case values must be strings")
+        if case["id"] in seen_ids:
+            raise ValueError("duplicate conformance case identifier")
+        seen_ids.add(case["id"])
+    return spec, hashlib.sha256(raw).hexdigest()
+
+
+def _python_source(spec: dict, spec_hash: str) -> str:
+    removals = tuple(sorted(_codepoint(value) for value in spec["remove_code_points"]))
+    whitespace = tuple(
+        sorted(_codepoint(value) for value in spec["whitespace_code_points"])
+    )
+    mappings: list[tuple[int, int]] = []
+    for mapping in spec["map_code_points"]:
+        target = _codepoint(mapping["to"])
+        mappings.extend((_codepoint(source), target) for source in mapping["from"])
+    mappings.sort()
+    article = tuple(_codepoint(value) for value in spec["definite_article"]["code_points"])
+    minimum = int(spec["repetition"]["minimum_run_length"])
+    replacement = int(spec["repetition"]["replacement_run_length"])
+    if minimum != 3 or replacement != 2:
+        raise ValueError("unsupported repetition policy")
+
+    return f'''# Generated by scripts/normalization/generate_normalizers.py; do not edit.
+"""Canonical Syaq Arabic normalizer: {spec["normalizer_id"]}."""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+
+
+NORMALIZER_ID: str = {spec["normalizer_id"]!r}
+NORMALIZER_VERSION: int = {spec["normalizer_version"]}
+NORMALIZER_SPEC_SHA256: str = {spec_hash!r}
+
+_REMOVED_CODE_POINTS = frozenset({removals!r})
+_WHITESPACE_CODE_POINTS = frozenset({whitespace!r})
+_TRANSLATION = str.maketrans({dict(mappings)!r})
+_ARTICLE = {''.join(chr(value) for value in article)!r}
+_REPEATED_CODE_POINT_RE = re.compile(r"(.)\\1{{2,}}")
+
+
+def _require_string(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("syaq-arabic-v1 requires a string input")
+    return text
+
+
+def _trim_contract_whitespace(text: str) -> str:
+    start = 0
+    end = len(text)
+    while start < end and ord(text[start]) in _WHITESPACE_CODE_POINTS:
+        start += 1
+    while end > start and ord(text[end - 1]) in _WHITESPACE_CODE_POINTS:
+        end -= 1
+    return text[start:end]
+
+
+def normalize_arabic(text: str) -> str:
+    """Apply the canonical core transformations without key/article rules."""
+    text = _require_string(text)
+    text = "".join(
+        character
+        for character in text
+        if unicodedata.category(character) != "Mn"
+        and ord(character) not in _REMOVED_CODE_POINTS
+    )
+    text = text.translate(_TRANSLATION)
+    text = _REPEATED_CODE_POINT_RE.sub(r"\\1\\1", text)
+    return _trim_contract_whitespace(text)
+
+
+def strip_al_prefix(text: str) -> str:
+    """Strip the canonical definite-article prefix when a body remains."""
+    text = _require_string(text)
+    if text.startswith(_ARTICLE) and len(text) > len(_ARTICLE):
+        return text[len(_ARTICLE):]
+    return text
+
+
+def normalize_for_game(text: str) -> str:
+    """Build the canonical equality value used by game logic."""
+    normalized = normalize_arabic(text)
+    normalized = "".join(
+        character
+        for character in normalized
+        if ord(character) not in _WHITESPACE_CODE_POINTS
+    )
+    return strip_al_prefix(normalized)
+
+
+def normalize_for_lookup_key(text: str) -> str:
+    """Build a canonical rank/cache lookup key; no fallback is performed."""
+    return normalize_for_game(text)
+
+
+def normalize_for_filename(text: str) -> str:
+    """Build a canonical filename stem without spelling compatibility folds."""
+    return normalize_for_game(text)
+
+
+__all__ = [
+    "NORMALIZER_ID",
+    "NORMALIZER_VERSION",
+    "NORMALIZER_SPEC_SHA256",
+    "normalize_arabic",
+    "normalize_for_game",
+    "normalize_for_lookup_key",
+    "normalize_for_filename",
+    "strip_al_prefix",
+]
+'''
+
+
+def _javascript_source(spec: dict, spec_hash: str) -> str:
+    removals = [chr(_codepoint(value)) for value in spec["remove_code_points"]]
+    whitespace = [chr(_codepoint(value)) for value in spec["whitespace_code_points"]]
+    mappings: list[tuple[str, str]] = []
+    for mapping in spec["map_code_points"]:
+        target = chr(_codepoint(mapping["to"]))
+        mappings.extend((chr(_codepoint(source)), target) for source in mapping["from"])
+    article = "".join(
+        chr(_codepoint(value)) for value in spec["definite_article"]["code_points"]
+    )
+    return f'''// Generated by scripts/normalization/generate_normalizers.py; do not edit.
+// normalizer_id={spec["normalizer_id"]} version={spec["normalizer_version"]} spec_sha256={spec_hash}
+(function (root, factory) {{
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.SyaqNormalizer = api;
+}})(typeof globalThis !== "undefined" ? globalThis : this, function () {{
+  "use strict";
+
+  const NORMALIZER_ID = {json.dumps(spec["normalizer_id"])};
+  const NORMALIZER_VERSION = {spec["normalizer_version"]};
+  const NORMALIZER_SPEC_SHA256 = {json.dumps(spec_hash)};
+  const REMOVED = new Set({json.dumps(removals, ensure_ascii=False)});
+  const WHITESPACE = new Set({json.dumps(whitespace, ensure_ascii=False)});
+  const MAPPINGS = {json.dumps(mappings, ensure_ascii=False)};
+  const ARTICLE = {json.dumps(article, ensure_ascii=False)};
+  const MARK_RE = /\\p{{Mn}}/gu;
+  const REPEATED_CODE_POINT_RE = /(.)\\1{{2,}}/gu;
+
+  function requireString(text) {{
+    if (typeof text !== "string") {{
+      throw new TypeError("syaq-arabic-v1 requires a string input");
+    }}
+    return text;
+  }}
+
+  function trimContractWhitespace(text) {{
+    const values = Array.from(text);
+    let start = 0;
+    let end = values.length;
+    while (start < end && WHITESPACE.has(values[start])) start += 1;
+    while (end > start && WHITESPACE.has(values[end - 1])) end -= 1;
+    return values.slice(start, end).join("");
+  }}
+
+  function normalizeArabic(text) {{
+    text = requireString(text).replace(MARK_RE, "");
+    text = Array.from(text).filter((value) => !REMOVED.has(value)).join("");
+    for (const [source, target] of MAPPINGS) {{
+      text = text.split(source).join(target);
+    }}
+    text = text.replace(REPEATED_CODE_POINT_RE, "$1$1");
+    return trimContractWhitespace(text);
+  }}
+
+  function stripAlPrefix(text) {{
+    text = requireString(text);
+    const values = Array.from(text);
+    if (text.startsWith(ARTICLE) && values.length > Array.from(ARTICLE).length) {{
+      return values.slice(Array.from(ARTICLE).length).join("");
+    }}
+    return text;
+  }}
+
+  function normalizeForGame(text) {{
+    const normalized = Array.from(normalizeArabic(text))
+      .filter((value) => !WHITESPACE.has(value))
+      .join("");
+    return stripAlPrefix(normalized);
+  }}
+
+  return Object.freeze({{
+    NORMALIZER_ID,
+    NORMALIZER_VERSION,
+    NORMALIZER_SPEC_SHA256,
+    normalizeArabic,
+    normalizeForGame,
+    normalizeForLookupKey: normalizeForGame,
+    normalizeForFilename: normalizeForGame,
+    stripAlPrefix,
+  }});
+}});
+'''
+
+
+def _write_or_check(path: Path, expected: str, check: bool) -> None:
+    if check:
+        if not path.exists() or path.read_text(encoding="utf-8") != expected:
+            raise SystemExit(f"generated output is stale: {path.relative_to(ROOT)}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(expected, encoding="utf-8", newline="\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    spec, spec_hash = _load_contract()
+    _write_or_check(PYTHON_OUTPUT, _python_source(spec, spec_hash), args.check)
+    _write_or_check(
+        JAVASCRIPT_OUTPUT, _javascript_source(spec, spec_hash), args.check
+    )
+    mode = "check" if args.check else "write"
+    print(f"generated_normalizers=PASS mode={mode} spec_sha256={spec_hash}")
+
+
+if __name__ == "__main__":
+    main()

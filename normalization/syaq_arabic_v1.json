@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "normalizer_id": "syaq-arabic-v1",
+  "normalizer_version": 1,
+  "description": "Canonical Syaq Arabic equality, lookup-key, and filename normalization contract.",
+  "input": {
+    "type": "string",
+    "invalid_input": "raise_type_error"
+  },
+  "output": {
+    "type": "string",
+    "locale_dependent": false,
+    "network_dependent": false
+  },
+  "unicode_normalization": {
+    "form": "NONE",
+    "reason": "Preserve the current backend code-point behavior; no NFC, NFD, NFKC, or NFKD rewrite is applied."
+  },
+  "operation_order": [
+    "remove_general_category_Mn",
+    "remove_code_points",
+    "map_code_points",
+    "collapse_repeated_code_points",
+    "trim_contract_whitespace",
+    "remove_all_contract_whitespace_for_game",
+    "strip_definite_article_for_game"
+  ],
+  "remove_general_categories": [
+    "Mn"
+  ],
+  "remove_code_points": [
+    "U+0640",
+    "U+200B",
+    "U+200C",
+    "U+200D",
+    "U+200E",
+    "U+200F",
+    "U+FEFF"
+  ],
+  "map_code_points": [
+    {
+      "from": [
+        "U+0623",
+        "U+0625",
+        "U+0622",
+        "U+0671"
+      ],
+      "to": "U+0627",
+      "name": "alef_variants_to_alef"
+    },
+    {
+      "from": [
+        "U+0624"
+      ],
+      "to": "U+0648",
+      "name": "waw_with_hamza_to_waw"
+    },
+    {
+      "from": [
+        "U+0626"
+      ],
+      "to": "U+064A",
+      "name": "yeh_with_hamza_to_yeh"
+    },
+    {
+      "from": [
+        "U+0629"
+      ],
+      "to": "U+0647",
+      "name": "teh_marbuta_to_heh"
+    }
+  ],
+  "preserved_code_points": [
+    "U+0621",
+    "U+0649",
+    "U+064A"
+  ],
+  "preserved_distinctions": [
+    {
+      "left": "U+0649",
+      "right": "U+064A",
+      "rule": "distinct"
+    }
+  ],
+  "repetition": {
+    "minimum_run_length": 3,
+    "replacement_run_length": 2,
+    "scope": "any_code_point_except_line_terminators"
+  },
+  "whitespace_code_points": [
+    "U+0009",
+    "U+000A",
+    "U+000B",
+    "U+000C",
+    "U+000D",
+    "U+001C",
+    "U+001D",
+    "U+001E",
+    "U+001F",
+    "U+0020",
+    "U+0085",
+    "U+00A0",
+    "U+1680",
+    "U+2000",
+    "U+2001",
+    "U+2002",
+    "U+2003",
+    "U+2004",
+    "U+2005",
+    "U+2006",
+    "U+2007",
+    "U+2008",
+    "U+2009",
+    "U+200A",
+    "U+2028",
+    "U+2029",
+    "U+202F",
+    "U+205F",
+    "U+3000"
+  ],
+  "whitespace": {
+    "core": "trim_leading_and_trailing_contract_whitespace",
+    "game_lookup_filename": "remove_all_contract_whitespace"
+  },
+  "definite_article": {
+    "code_points": [
+      "U+0627",
+      "U+0644"
+    ],
+    "position": "prefix",
+    "strip_when_output_code_point_length_greater_than": 2,
+    "applies_to": [
+      "game",
+      "lookup_key",
+      "filename"
+    ]
+  },
+  "punctuation": "preserve",
+  "underscores": "preserve",
+  "arabic_indic_digits": "preserve",
+  "ascii_digits": "preserve",
+  "latin_letters": "preserve_case",
+  "emoji": "preserve_except_removed_Mn_variation_marks",
+  "equality": "normalize_for_game_then_exact_code_point_equality",
+  "lookup_key": "normalize_for_game",
+  "filename": "normalize_for_game",
+  "suggestions_and_fuzzy_matching": "outside_canonical_layer",
+  "maximum_assumptions": [
+    "The input is a Unicode string.",
+    "The contract does not perform linguistic stemming, lemmatization, spelling correction, or rank fallback.",
+    "U+0649 and U+064A are always distinct in canonical equality, keys, and filenames."
+  ]
+}

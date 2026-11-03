@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "normalizer_id": "syaq-arabic-v1",
+  "normalizer_version": 1,
+  "fixtures_are_synthetic": true,
+  "cases": [
+    {
+      "id": "alef_maqsura_minimal",
+      "input": "س\u0649",
+      "expected": "س\u0649"
+    },
+    {
+      "id": "yeh_minimal",
+      "input": "س\u064a",
+      "expected": "س\u064a"
+    },
+    {
+      "id": "mixed_yeh_maqsura",
+      "input": "يىئي",
+      "expected": "يىيي"
+    },
+    {
+      "id": "arabic_diacritics",
+      "input": "بَّت",
+      "expected": "بت"
+    },
+    {
+      "id": "quranic_mark",
+      "input": "ب\u06d6ت",
+      "expected": "بت"
+    },
+    {
+      "id": "tatweel",
+      "input": "بـت",
+      "expected": "بت"
+    },
+    {
+      "id": "zero_width_set",
+      "input": "ب​‌‍‎‏﻿ت",
+      "expected": "بت"
+    },
+    {
+      "id": "alef_hamza_above",
+      "input": "أب",
+      "expected": "اب"
+    },
+    {
+      "id": "alef_hamza_below",
+      "input": "إت",
+      "expected": "ات"
+    },
+    {
+      "id": "alef_madda",
+      "input": "آج",
+      "expected": "اج"
+    },
+    {
+      "id": "alef_wasla",
+      "input": "ٱح",
+      "expected": "اح"
+    },
+    {
+      "id": "hamza_seats",
+      "input": "ؤوئىيى",
+      "expected": "وويىيى"
+    },
+    {
+      "id": "standalone_hamza_preserved",
+      "input": "ء",
+      "expected": "ء"
+    },
+    {
+      "id": "teh_marbuta",
+      "input": "بةت",
+      "expected": "بهت"
+    },
+    {
+      "id": "repeated_code_points",
+      "input": "سسسس",
+      "expected": "سس"
+    },
+    {
+      "id": "mapping_then_repeat",
+      "input": "ةههة",
+      "expected": "هه"
+    },
+    {
+      "id": "leading_internal_trailing_whitespace",
+      "input": "  ب  ت  ",
+      "expected": "بت"
+    },
+    {
+      "id": "contract_whitespace_code_points",
+      "input": "\tب ت　",
+      "expected": "بت"
+    },
+    {
+      "id": "definite_article",
+      "input": "اَلـب ت",
+      "expected": "بت"
+    },
+    {
+      "id": "article_only_preserved",
+      "input": "ال",
+      "expected": "ال"
+    },
+    {
+      "id": "arabic_and_ascii_punctuation",
+      "input": "ب،ت!?؛",
+      "expected": "ب،ت!?؛"
+    },
+    {
+      "id": "underscore_preserved",
+      "input": "ب_ت",
+      "expected": "ب_ت"
+    },
+    {
+      "id": "digits_preserved",
+      "input": "١٢3",
+      "expected": "١٢3"
+    },
+    {
+      "id": "latin_case_preserved",
+      "input": "AbC-é",
+      "expected": "AbC-é"
+    },
+    {
+      "id": "latin_combining_mark_removed",
+      "input": "é",
+      "expected": "e"
+    },
+    {
+      "id": "emoji_variation_mark",
+      "input": "🧪️",
+      "expected": "🧪"
+    },
+    {
+      "id": "empty",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "id": "whitespace_only",
+      "input": " \t\n ",
+      "expected": ""
+    },
+    {
+      "id": "combining_mark_order",
+      "input": "بَّت",
+      "expected": "بت"
+    }
+  ]
+}
