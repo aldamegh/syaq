@@ -4,6 +4,25 @@ An Arabic daily semantic guessing game. Guess words and use their proximity rank
 
 **[Play Syaq](https://syaq.online/) · [Mohammed AlDamegh](https://maldamegh.sa/)**
 
+## Live game and offline example
+
+[![Syaq live game interface](docs/live-game.jpg)](https://syaq.online/)
+
+The screenshot is a center crop of the public live game on 10 November 2026, after the example guesses `كتاب` and `مدرسة`. The live interface belongs to the complete service; the code in this repository covers only the selected modules described below. Game number, appearance, and available modes can change.
+
+The published modules can also be explored offline:
+
+```sh
+python demo.py
+```
+
+```text
+كتاب
+{'games': [{'id': 1}], 'active_id': 1}
+```
+
+The input `  الْكِتَاب  ` becomes `كتاب`: diacritics, whitespace, and the definite-article prefix are removed for game equality. The synthetic metadata example retains the game ID and omits the example target word. Callers must still apply the release policy before serialization. [Captured plain-text output](examples/output.txt).
+
 ## What this repository contains
 
 This is a curated source excerpt from Syaq, not a complete deployment of the live service. It contains the canonical Arabic normalization contract and its Python/JavaScript implementations, public game metadata serializers, and a URL logging helper. These small modules can be inspected and tested without cloud access, databases, trained models, or private data.
